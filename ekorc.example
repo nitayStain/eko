@@ -1,0 +1,32 @@
+# ~/.ekorc — EKo configuration file
+#
+# Copy this file to ~/.ekorc and edit to taste.
+# Lines starting with # are comments.
+
+# ── Tab behavior ──────────────────────────────────────────────
+# Number of spaces per tab stop (default: 4)
+tab_size    = 4
+
+# Insert spaces instead of tab characters (default: false)
+# Accepts: true, yes, on, 1
+expand_tabs = false
+
+# ── Color theme ───────────────────────────────────────────────
+# Built-in themes: default, monokai, dracula, nord, gruvbox,
+#                  solarized-dark, one-dark, retrobox
+# Custom themes:   place NAME.theme in ~/.eko/themes/
+theme       = monokai
+
+# ── Color overrides ───────────────────────────────────────────
+# These override the theme's colors. Values can be:
+#   - A 256-color ANSI index (0-255)
+#   - A hex color: #RRGGBB  (24-bit true color)
+#   - -1 for terminal default (color_bg only)
+#
+# color_bg       = #272822
+# color_comment  = #75715e
+# color_keyword1 = #f92672
+# color_keyword2 = #66d9ef
+# color_string   = #e6db74
+# color_number   = #ae81ff
+# color_match    = #e6db74

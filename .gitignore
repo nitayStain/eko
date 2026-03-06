@@ -1,0 +1,17 @@
+# Build output
+eko
+kilo
+
+# Object files
+*.o
+*.d
+
+# macOS
+.DS_Store
+
+# Editor temp files
+*~
+*.swp
+
+# Claude/Amp local settings
+.claude/
