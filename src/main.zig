@@ -20,7 +20,11 @@ pub fn main() !void {
         try ed.open(args[1]);
     }
 
-    ed.setStatusMessage("^S=save ^F=find ^R=replace ^G=goto ^Q=quit", .{});
+    if (ed.config.config_err) |err| {
+        ed.setStatusMessage("Config error: {s}", .{err});
+    } else {
+        ed.setStatusMessage("^S=save ^F=find ^R=replace ^G=goto ^Q=quit", .{});
+    }
 
     while (true) {
         try ed.refreshScreen();

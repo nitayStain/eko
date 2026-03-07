@@ -1,6 +1,12 @@
 const std = @import("std");
 const terminal = @import("../terminal.zig");
 const PieceTable = @import("../piece_table.zig");
+pub const config_mod = @import("config.zig");
+pub const syntax_mod = @import("syntax.zig");
+pub const Config = config_mod.Config;
+pub const Color = config_mod.Color;
+pub const SyntaxDef = syntax_mod.SyntaxDef;
+pub const HlType = syntax_mod.HlType;
 
 const Editor = @This();
 
@@ -18,6 +24,7 @@ pub const scroll = cursor.scroll;
 pub const moveCursor = cursor.moveCursor;
 pub const rowCxToRx = cursor.rowCxToRx;
 pub const clampCursor = cursor.clampCursor;
+pub const updateLineNumWidth = cursor.updateLineNumWidth;
 
 // Editing
 pub const insertChar = editing.insertChar;
@@ -68,12 +75,12 @@ pub const Key = union(enum) {
     home,
     end,
     delete,
-    none,
 };
 
 pub const RowMeta = struct {
     off: usize,
     size: usize,
+    hl_open_comment: bool = false,
 };
 
 pub const Selection = struct {
@@ -106,7 +113,10 @@ selection: ?Selection = null,
 clipboard: ?[]u8 = null,
 
 quit_times: u8 = 2,
-tab_size: usize = 4,
+
+config: Config = .{},
+syntax: ?*const SyntaxDef = null,
+line_num_width: usize = 0,
 
 // --- Core methods ---
 
@@ -114,13 +124,18 @@ pub fn init(allocator: std.mem.Allocator) !Editor {
     const screen = try terminal.getWindowSize();
     var sr: usize = @intCast(screen.rows);
     if (sr >= 2) sr -= 2; // reserve status bar + message bar
+
+    const cfg = config_mod.load(allocator);
+
     var ed = Editor{
         .allocator = allocator,
         .text = try PieceTable.init(allocator, ""),
         .screen_rows = sr,
         .screen_cols = @intCast(screen.cols),
+        .config = cfg,
     };
     try ed.rows.append(allocator, RowMeta{ .off = 0, .size = 0 });
+    ed.updateLineNumWidth();
     return ed;
 }
 
@@ -168,6 +183,11 @@ pub fn setStatusMessage(self: *Editor, comptime fmt: []const u8, args: anytype) 
     self.status_time = std.time.timestamp();
 }
 
-pub fn textRows(self: *const Editor) usize {
-    return self.screen_rows;
+pub fn textCols(self: *const Editor) usize {
+    if (self.line_num_width >= self.screen_cols) return 0;
+    return self.screen_cols - self.line_num_width;
+}
+
+pub fn updateSyntaxState(self: *Editor) void {
+    syntax_mod.updateCommentState(self.syntax, self.rows.items, self.text);
 }

@@ -1,14 +1,16 @@
 const std = @import("std");
 const PieceTable = @import("../piece_table.zig");
 const Editor = @import("Editor.zig");
+const syntax_mod = @import("syntax.zig");
 
 pub fn open(self: *Editor, path: []const u8) !void {
     if (self.filename) |old| self.allocator.free(old);
     self.filename = try self.allocator.dupe(u8, path);
 
+    self.syntax = syntax_mod.selectSyntax(self.filename);
+
     const file = std.fs.cwd().openFile(path, .{}) catch |err| {
         if (err == error.FileNotFound) {
-            // New file — keep empty buffer, just set the filename
             self.setStatusMessage("New file: {s}", .{path});
             return;
         }
@@ -24,6 +26,7 @@ pub fn open(self: *Editor, path: []const u8) !void {
     self.base_buf = content;
     self.text = try PieceTable.init(self.allocator, content);
     try self.rebuildRows();
+    self.updateSyntaxState();
     self.dirty = 0;
     self.cx = 0;
     self.cy = 0;

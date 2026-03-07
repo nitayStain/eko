@@ -6,7 +6,35 @@ fn ctrlKey(c: u8) u8 {
     return c & 0x1f;
 }
 
+/// Use poll() to check if stdin has data available within `timeout_ms`.
+fn stdinHasData(timeout_ms: i32) bool {
+    const POLLIN = 0x0001;
+    var pfd = [1]std.posix.pollfd{.{
+        .fd = std.posix.STDIN_FILENO,
+        .events = POLLIN,
+        .revents = 0,
+    }};
+    const n = std.posix.poll(&pfd, timeout_ms) catch return false;
+    return n > 0 and (pfd[0].revents & POLLIN) != 0;
+}
+
+/// Drain any stale bytes sitting in stdin (e.g. from terminal responses).
+pub fn drainInput() void {
+    while (stdinHasData(0)) {
+        var discard: [64]u8 = undefined;
+        _ = std.posix.read(std.posix.STDIN_FILENO, &discard) catch break;
+    }
+}
+
+fn readByte() !?u8 {
+    var buf: [1]u8 = undefined;
+    const n = try std.posix.read(std.posix.STDIN_FILENO, &buf);
+    if (n == 0) return null;
+    return buf[0];
+}
+
 pub fn readKey() !Editor.Key {
+    // Block until a byte is available
     var buf: [1]u8 = undefined;
     while (true) {
         const n = try std.posix.read(std.posix.STDIN_FILENO, &buf);
@@ -18,18 +46,20 @@ pub fn readKey() !Editor.Key {
     if (c == 127) return Editor.Key{ .char = 127 }; // backspace
     if (c != '\x1b') return Editor.Key{ .char = c };
 
-    var seq: [2]u8 = undefined;
-    const n1 = std.posix.read(std.posix.STDIN_FILENO, seq[0..1]) catch return Editor.Key{ .char = '\x1b' };
-    if (n1 == 0) return Editor.Key{ .char = '\x1b' };
-    const n2 = std.posix.read(std.posix.STDIN_FILENO, seq[1..2]) catch return Editor.Key{ .char = '\x1b' };
-    if (n2 == 0) return Editor.Key{ .char = '\x1b' };
+    // Got ESC byte — use poll to check if more bytes follow (escape sequence).
+    // A bare ESC keypress won't have follow-up bytes.
+    if (!stdinHasData(50)) return Editor.Key{ .char = '\x1b' };
 
-    if (seq[0] == '[') {
-        if (seq[1] >= '0' and seq[1] <= '9') {
-            var seq3: [1]u8 = undefined;
-            const n3 = std.posix.read(std.posix.STDIN_FILENO, &seq3) catch return Editor.Key.none;
-            if (n3 > 0 and seq3[0] == '~') {
-                return switch (seq[1]) {
+    const s0 = (try readByte()) orelse return Editor.Key{ .char = '\x1b' };
+    if (!stdinHasData(50)) return Editor.Key{ .char = '\x1b' };
+    const s1 = (try readByte()) orelse return Editor.Key{ .char = '\x1b' };
+
+    if (s0 == '[') {
+        if (s1 >= '0' and s1 <= '9') {
+            if (!stdinHasData(50)) return Editor.Key{ .char = '\x1b' };
+            const s2 = (try readByte()) orelse return Editor.Key{ .char = '\x1b' };
+            if (s2 == '~') {
+                return switch (s1) {
                     '1' => Editor.Key.home,
                     '3' => Editor.Key.delete,
                     '4' => Editor.Key.end,
@@ -37,40 +67,40 @@ pub fn readKey() !Editor.Key {
                     '6' => Editor.Key.page_down,
                     '7' => Editor.Key.home,
                     '8' => Editor.Key.end,
-                    else => Editor.Key.none,
+                    else => Editor.Key{ .char = '\x1b' },
                 };
             }
             // Check for shift+arrow: ESC [ 1 ; 2 <dir>
-            if (seq[1] == '1' and n3 > 0 and seq3[0] == ';') {
-                var mod: [1]u8 = undefined;
-                var dir: [1]u8 = undefined;
-                const nm = std.posix.read(std.posix.STDIN_FILENO, &mod) catch return Editor.Key.none;
-                const nd = std.posix.read(std.posix.STDIN_FILENO, &dir) catch return Editor.Key.none;
-                if (nm > 0 and nd > 0 and mod[0] == '2') {
-                    return switch (dir[0]) {
+            if (s1 == '1' and s2 == ';') {
+                if (!stdinHasData(50)) return Editor.Key{ .char = '\x1b' };
+                const mod = (try readByte()) orelse return Editor.Key{ .char = '\x1b' };
+                if (!stdinHasData(50)) return Editor.Key{ .char = '\x1b' };
+                const dir = (try readByte()) orelse return Editor.Key{ .char = '\x1b' };
+                if (mod == '2') {
+                    return switch (dir) {
                         'A' => Editor.Key.shift_arrow_up,
                         'B' => Editor.Key.shift_arrow_down,
                         'C' => Editor.Key.shift_arrow_right,
                         'D' => Editor.Key.shift_arrow_left,
-                        else => Editor.Key.none,
+                        else => Editor.Key{ .char = '\x1b' },
                     };
                 }
             }
         }
-        return switch (seq[1]) {
+        return switch (s1) {
             'A' => Editor.Key.arrow_up,
             'B' => Editor.Key.arrow_down,
             'C' => Editor.Key.arrow_right,
             'D' => Editor.Key.arrow_left,
             'H' => Editor.Key.home,
             'F' => Editor.Key.end,
-            else => Editor.Key.none,
+            else => Editor.Key{ .char = '\x1b' },
         };
-    } else if (seq[0] == 'O') {
-        return switch (seq[1]) {
+    } else if (s0 == 'O') {
+        return switch (s1) {
             'H' => Editor.Key.home,
             'F' => Editor.Key.end,
-            else => Editor.Key.none,
+            else => Editor.Key{ .char = '\x1b' },
         };
     }
 
@@ -122,9 +152,12 @@ pub fn processKeypress(self: *Editor) !bool {
                 }
             } else if (c == '\t') {
                 if (self.selection != null) try self.deleteSelection();
-                // Expand tab to spaces
-                const spaces = self.tab_size - (self.cx % self.tab_size);
-                for (0..spaces) |_| try self.insertChar(' ');
+                if (self.config.expand_tabs) {
+                    const spaces = self.config.tab_size - (self.cx % self.config.tab_size);
+                    for (0..spaces) |_| try self.insertChar(' ');
+                } else {
+                    try self.insertChar('\t');
+                }
             } else if (c == '\x1b' or c == ctrlKey('l')) {
                 self.selectClear();
             } else if (c >= 32 and c < 127) {
@@ -189,8 +222,6 @@ pub fn processKeypress(self: *Editor) !bool {
                 self.cx = self.rows.items[self.cy].size;
             }
         },
-
-        .none => {},
     }
 
     self.quit_times = 2;
@@ -210,6 +241,7 @@ pub fn prompt(self: *Editor, comptime fmt: []const u8, args: anytype) !?[]u8 {
         const msg = std.fmt.bufPrint(&msg_buf, fmt, .{buf.items}) catch buf.items;
         @memcpy(self.status_msg[0..msg.len], msg);
         self.status_msg_len = msg.len;
+        self.status_time = std.time.timestamp();
         try self.refreshScreen();
 
         const key = try readKey();

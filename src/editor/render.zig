@@ -1,6 +1,9 @@
 const std = @import("std");
 const terminal = @import("../terminal.zig");
 const Editor = @import("Editor.zig");
+const syntax_mod = @import("syntax.zig");
+const Color = Editor.Color;
+const HlType = Editor.HlType;
 
 pub fn refreshScreen(self: *Editor) !void {
     self.scroll();
@@ -11,13 +14,26 @@ pub fn refreshScreen(self: *Editor) !void {
     try self.render_buf.appendSlice(alloc, "\x1b[?25l");
     try self.render_buf.appendSlice(alloc, "\x1b[H");
 
+    // Set background color if configured
+    const has_bg = switch (self.config.color_bg) {
+        .none => false,
+        else => true,
+    };
+    if (has_bg) {
+        try self.config.color_bg.writeBg(&self.render_buf, alloc);
+    }
+
     try drawRows(self);
     try drawStatusBar(self);
     try drawMessageBar(self);
 
-    // Position cursor
+    if (has_bg) {
+        try self.render_buf.appendSlice(alloc, "\x1b[49m");
+    }
+
+    // Position cursor (accounting for line number gutter)
     const cursor_row = self.cy - self.row_offset + 1;
-    const cursor_col = self.rx - self.col_offset + 1;
+    const cursor_col = self.rx - self.col_offset + 1 + self.line_num_width;
     var pos_buf: [32]u8 = undefined;
     const pos = std.fmt.bufPrint(&pos_buf, "\x1b[{d};{d}H", .{ cursor_row, cursor_col }) catch unreachable;
     try self.render_buf.appendSlice(alloc, pos);
@@ -28,68 +44,175 @@ pub fn refreshScreen(self: *Editor) !void {
 
 fn drawRows(self: *Editor) !void {
     const alloc = self.allocator;
+    const gutter = self.line_num_width;
+    const text_cols = self.textCols();
 
     for (0..self.screen_rows) |y| {
         const file_row = y + self.row_offset;
         if (file_row < self.rows.items.len) {
-            try appendVisibleRow(self, file_row);
-        } else if (self.rows.items.len <= 1 and self.text.getTotalLength() == 0 and y == self.screen_rows / 3) {
-            // Welcome message
-            const welcome = "eko editor -- ^S=save ^F=find ^Q=quit";
-            const wlen = @min(welcome.len, self.screen_cols);
-            const padding = if (self.screen_cols > wlen) (self.screen_cols - wlen) / 2 else 0;
-            if (padding > 0) {
-                try self.render_buf.append(alloc, '~');
-                for (1..padding) |_| try self.render_buf.append(alloc, ' ');
+            // Line number gutter
+            if (gutter > 0) {
+                try self.render_buf.appendSlice(alloc, "\x1b[90m");
+                var lnum_buf: [16]u8 = undefined;
+                const lnum = std.fmt.bufPrint(&lnum_buf, "{d}", .{file_row + 1}) catch "?";
+                // Right-align the number in (gutter-1) chars + 1 space
+                const num_width = gutter - 1;
+                if (lnum.len < num_width) {
+                    for (0..num_width - lnum.len) |_| try self.render_buf.append(alloc, ' ');
+                }
+                try self.render_buf.appendSlice(alloc, lnum);
+                try self.render_buf.append(alloc, ' ');
+                try self.render_buf.appendSlice(alloc, "\x1b[39m");
             }
-            try self.render_buf.appendSlice(alloc, welcome[0..wlen]);
+
+            try appendVisibleRowWithSyntax(self, file_row, text_cols);
         } else {
-            try self.render_buf.append(alloc, '~');
+            // Gutter for empty rows
+            if (gutter > 0) {
+                try self.render_buf.appendSlice(alloc, "\x1b[90m");
+                for (0..gutter) |_| try self.render_buf.append(alloc, ' ');
+                try self.render_buf.appendSlice(alloc, "\x1b[39m");
+            }
+
+            if (self.rows.items.len <= 1 and self.text.getTotalLength() == 0 and y == self.screen_rows / 3) {
+                const welcome = "eko editor -- ^S=save ^F=find ^Q=quit";
+                const wlen = @min(welcome.len, text_cols);
+                const padding = if (text_cols > wlen) (text_cols - wlen) / 2 else 0;
+                if (padding > 0) {
+                    try self.render_buf.append(alloc, '~');
+                    for (1..padding) |_| try self.render_buf.append(alloc, ' ');
+                }
+                try self.render_buf.appendSlice(alloc, welcome[0..wlen]);
+            } else {
+                try self.render_buf.append(alloc, '~');
+            }
         }
         try self.render_buf.appendSlice(alloc, "\x1b[K");
         try self.render_buf.appendSlice(alloc, "\r\n");
     }
 }
 
-fn appendVisibleRow(self: *Editor, row_idx: usize) !void {
+fn appendVisibleRowWithSyntax(self: *Editor, row_idx: usize, max_cols: usize) !void {
     const alloc = self.allocator;
     const row = self.rows.items[row_idx];
 
     if (row.size == 0) return;
 
-    // Read the row content
-    var line_storage: [8192]u8 = undefined;
-    var line: []u8 = undefined;
-    var heap_line: ?[]u8 = null;
-    defer if (heap_line) |hl| self.allocator.free(hl);
+    // Read raw row content
+    var stack_buf: [8192]u8 = undefined;
+    var heap_buf: ?[]u8 = null;
+    defer if (heap_buf) |hb| self.allocator.free(hb);
 
-    if (row.size <= line_storage.len) {
-        self.text.copyRange(row.off, line_storage[0..row.size]);
-        line = line_storage[0..row.size];
-    } else {
-        heap_line = try self.allocator.alloc(u8, row.size);
-        self.text.copyRange(row.off, heap_line.?);
-        line = heap_line.?;
-    }
+    const raw: []u8 = if (row.size <= stack_buf.len)
+        stack_buf[0..row.size]
+    else blk: {
+        heap_buf = try self.allocator.alloc(u8, row.size);
+        break :blk heap_buf.?;
+    };
+    self.text.copyRange(row.off, raw);
 
-    // Expand tabs and compute rendered content
-    var render_col: usize = 0;
-    for (line) |c| {
+    // Expand tabs into rendered buffer
+    const tab_size = self.config.tab_size;
+    var rendered_storage: [16384]u8 = undefined;
+    var rendered_len: usize = 0;
+    for (raw) |c| {
         if (c == '\t') {
-            const spaces = self.tab_size - (render_col % self.tab_size);
+            const spaces = tab_size - (rendered_len % tab_size);
             for (0..spaces) |_| {
-                if (render_col >= self.col_offset and render_col < self.col_offset + self.screen_cols) {
-                    try self.render_buf.append(alloc, ' ');
+                if (rendered_len < rendered_storage.len) {
+                    rendered_storage[rendered_len] = ' ';
+                    rendered_len += 1;
                 }
-                render_col += 1;
             }
         } else {
-            if (render_col >= self.col_offset and render_col < self.col_offset + self.screen_cols) {
-                try self.render_buf.append(alloc, c);
+            if (rendered_len < rendered_storage.len) {
+                rendered_storage[rendered_len] = c;
+                rendered_len += 1;
             }
-            render_col += 1;
         }
-        if (render_col >= self.col_offset + self.screen_cols) break;
+    }
+    const rendered = rendered_storage[0..rendered_len];
+
+    // Compute syntax highlights
+    var hl_storage: [16384]HlType = undefined;
+    const hl = hl_storage[0..rendered_len];
+    @memset(hl, .normal);
+
+    if (self.syntax) |syn| {
+        _ = syntax_mod.computeHighlights(syn, rendered, hl, row.hl_open_comment);
+    }
+
+    // Compute selection range in rendered coordinates
+    var sel_start_rx: ?usize = null;
+    var sel_end_rx: ?usize = null;
+    if (self.selection) |sel| {
+        const a_off = if (sel.mark_y < self.rows.items.len)
+            self.rows.items[sel.mark_y].off + sel.mark_x
+        else
+            self.text.getTotalLength();
+        const b_off = self.cursorOffset();
+        const s_off = @min(a_off, b_off);
+        const e_off = @max(a_off, b_off);
+
+        const row_off = row.off;
+        const row_end = row_off + row.size;
+        if (s_off < row_end and e_off > row_off) {
+            const sc = if (s_off > row_off) s_off - row_off else 0;
+            const ec = if (e_off < row_end) e_off - row_off else row.size;
+            sel_start_rx = self.rowCxToRx(row_idx, sc);
+            sel_end_rx = self.rowCxToRx(row_idx, ec);
+            // Adjust for col_offset
+            if (sel_start_rx.? < self.col_offset) sel_start_rx = self.col_offset;
+        }
+    }
+
+    // Output visible portion with colors
+    const col_start = self.col_offset;
+    const col_end = col_start + max_cols;
+    var current_color: Color = .none;
+    var in_sel = false;
+
+    var j = col_start;
+    while (j < @min(col_end, rendered_len)) : (j += 1) {
+        // Selection start/end
+        const want_sel = (sel_start_rx != null and sel_end_rx != null and
+            j >= sel_start_rx.? and j < sel_end_rx.?);
+
+        if (want_sel and !in_sel) {
+            try self.config.color_selection.writeBg(&self.render_buf, alloc);
+            in_sel = true;
+        } else if (!want_sel and in_sel) {
+            // Restore background
+            switch (self.config.color_bg) {
+                .none => try self.render_buf.appendSlice(alloc, "\x1b[49m"),
+                else => try self.config.color_bg.writeBg(&self.render_buf, alloc),
+            }
+            in_sel = false;
+        }
+
+        // Syntax color
+        const color = syntax_mod.hlToColor(hl[j], &self.config);
+        if (!color.eql(current_color)) {
+            current_color = color;
+            switch (color) {
+                .none => try self.render_buf.appendSlice(alloc, "\x1b[39m"),
+                else => try color.writeFg(&self.render_buf, alloc),
+            }
+        }
+
+        try self.render_buf.append(alloc, rendered[j]);
+    }
+
+    // Reset colors
+    if (in_sel) {
+        switch (self.config.color_bg) {
+            .none => try self.render_buf.appendSlice(alloc, "\x1b[49m"),
+            else => try self.config.color_bg.writeBg(&self.render_buf, alloc),
+        }
+    }
+    switch (current_color) {
+        .none => {},
+        else => try self.render_buf.appendSlice(alloc, "\x1b[39m"),
     }
 }
 
@@ -97,7 +220,7 @@ fn drawStatusBar(self: *Editor) !void {
     const alloc = self.allocator;
     try self.render_buf.appendSlice(alloc, "\x1b[7m");
 
-    const name = if (self.filename) |f| f else @as([]const u8, "[No Name]");
+    const name: []const u8 = if (self.filename) |f| f else "[No Name]";
     const modified: []const u8 = if (self.dirty > 0) " (modified)" else "";
 
     var status_buf: [256]u8 = undefined;
@@ -106,7 +229,8 @@ fn drawStatusBar(self: *Editor) !void {
     try self.render_buf.appendSlice(alloc, left[0..left_len]);
 
     var right_buf: [64]u8 = undefined;
-    const right = std.fmt.bufPrint(&right_buf, "{d}/{d} ", .{ self.cy + 1, self.rows.items.len }) catch "";
+    const ft: []const u8 = if (self.syntax) |s| s.filetype else "no ft";
+    const right = std.fmt.bufPrint(&right_buf, "{s} | {d}/{d} ", .{ ft, self.cy + 1, self.rows.items.len }) catch "";
 
     var col: usize = left_len;
     while (col < self.screen_cols) : (col += 1) {

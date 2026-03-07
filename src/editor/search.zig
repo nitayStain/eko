@@ -169,17 +169,17 @@ pub fn findReplace(self: *Editor) !void {
         return;
     }
 
+    input.drainInput();
     while (last_row != null) {
         self.setStatusMessage("Replace? Enter=yes Tab=skip ESC=done ({d} replaced)", .{replaced});
         try self.refreshScreen();
 
         const key = try input.readKey();
-        switch (key) {
-            .char => |c| {
+        const should_break = switch (key) {
+            .char => |c| blk: {
                 if (c == '\x1b') {
-                    break;
+                    break :blk true;
                 } else if (c == '\r') {
-                    // Replace
                     const r = last_row.?;
                     const col = last_col.?;
                     const off = self.rows.items[r].off + col;
@@ -188,6 +188,7 @@ pub fn findReplace(self: *Editor) !void {
                         try self.text.insert(off, repl);
                     }
                     try self.rebuildRows();
+                    self.updateSyntaxState();
                     self.setCursorFromOffset(off + repl.len);
                     replaced += 1;
                     self.dirty += 1;
@@ -197,19 +198,23 @@ pub fn findReplace(self: *Editor) !void {
                     findNext(self, q, &last_row, &last_col, 1);
                     if (last_row == null) {
                         self.setStatusMessage("Replaced {d} occurrence(s). No more matches.", .{replaced});
-                        break;
+                        break :blk true;
                     }
+                    break :blk false;
                 } else if (c == '\t') {
                     findNext(self, q, &last_row, &last_col, 1);
                     if (last_row == null) {
                         self.setStatusMessage("No more matches. {d} replaced.", .{replaced});
-                        break;
+                        break :blk true;
                     }
-                }
+                    break :blk false;
+                } else break :blk false;
             },
-            else => {},
-        }
+            else => false,
+        };
+        if (should_break) break;
     }
+    self.setStatusMessage("", .{});
 }
 
 pub fn gotoLine(self: *Editor) !void {
