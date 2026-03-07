@@ -21,7 +21,11 @@ enum editor_key {
     PAGE_DOWN,
     HOME_KEY,
     END_KEY,
-    DEL_KEY
+    DEL_KEY,
+    SHIFT_ARROW_LEFT,
+    SHIFT_ARROW_RIGHT,
+    SHIFT_ARROW_UP,
+    SHIFT_ARROW_DOWN
 };
 
 struct window_size {
@@ -88,6 +92,17 @@ struct editor_config {
     editor_row *row;
     char status[80];
     time_t status_time;
+
+    int line_num_width;
+
+    /* Selection state */
+    int selecting;
+    int mark_x;
+    int mark_y;
+
+    /* Clipboard */
+    char *clipboard;
+    int clipboard_len;
 };
 
 extern struct editor_config editor;

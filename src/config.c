@@ -84,52 +84,53 @@ static int is_color_key(const char *key) {
     return !strcmp(key, "color_bg")       || !strcmp(key, "color_comment")  ||
            !strcmp(key, "color_keyword1") || !strcmp(key, "color_keyword2") ||
            !strcmp(key, "color_string")   || !strcmp(key, "color_number")   ||
-           !strcmp(key, "color_match");
+           !strcmp(key, "color_match")    || !strcmp(key, "color_selection");
 }
 
 struct theme_def {
     const char *name;
-    int bg, comment, keyword1, keyword2, string, number, match;
+    int bg, comment, keyword1, keyword2, string, number, match, selection;
 };
 
 #define TC(r,g,b) EKO_COLOR_RGB(r,g,b)
 
 static const struct theme_def builtin_themes[] = {
-    { "default",        -1,   6,   3,   2,   5,   1,   4 },
+    { "default",        -1,   6,   3,   2,   5,   1,   4,   240 },
     { "monokai",        TC(0x27,0x28,0x22), TC(0x75,0x71,0x5e), TC(0xf9,0x26,0x72),
                         TC(0x66,0xd9,0xef), TC(0xe6,0xdb,0x74), TC(0xae,0x81,0xff),
-                        TC(0xe6,0xdb,0x74) },
+                        TC(0xe6,0xdb,0x74), TC(0x49,0x48,0x3e) },
     { "dracula",        TC(0x28,0x2a,0x36), TC(0x62,0x72,0xa4), TC(0xff,0x79,0xc6),
                         TC(0x50,0xfa,0x7b), TC(0xf1,0xfa,0x8c), TC(0xbd,0x93,0xf9),
-                        TC(0xf1,0xfa,0x8c) },
+                        TC(0xf1,0xfa,0x8c), TC(0x44,0x47,0x5a) },
     { "nord",           TC(0x2e,0x34,0x40), TC(0x4c,0x56,0x6a), TC(0x81,0xa1,0xc1),
                         TC(0x88,0xc0,0xd0), TC(0xa3,0xbe,0x8c), TC(0xd0,0x87,0x70),
-                        TC(0xeb,0xcb,0x8b) },
+                        TC(0xeb,0xcb,0x8b), TC(0x43,0x4c,0x5e) },
     { "gruvbox",        TC(0x28,0x28,0x28), TC(0x92,0x83,0x74), TC(0xfb,0x49,0x34),
                         TC(0xfa,0xbd,0x2f), TC(0xb8,0xbb,0x26), TC(0xd3,0x86,0x9b),
-                        TC(0xeb,0xcb,0x8b) },
+                        TC(0xeb,0xcb,0x8b), TC(0x50,0x49,0x45) },
     { "solarized-dark", TC(0x00,0x2b,0x36), TC(0x58,0x6e,0x75), TC(0x26,0x8b,0xd2),
                         TC(0x2a,0xa1,0x98), TC(0x85,0x99,0x00), TC(0xcb,0x4b,0x16),
-                        TC(0xb5,0x89,0x00) },
+                        TC(0xb5,0x89,0x00), TC(0x07,0x36,0x42) },
     { "one-dark",       TC(0x28,0x2c,0x34), TC(0x5c,0x63,0x70), TC(0xc6,0x78,0xdd),
                         TC(0x61,0xaf,0xef), TC(0xd1,0x9a,0x66), TC(0xe0,0x6c,0x75),
-                        TC(0xe5,0xc0,0x7b) },
+                        TC(0xe5,0xc0,0x7b), TC(0x3e,0x44,0x51) },
     { "retrobox",       TC(0x1d,0x20,0x21), TC(0x66,0x5c,0x54), TC(0xfe,0x80,0x19),
                         TC(0xfa,0xbd,0x2f), TC(0xb8,0xbb,0x26), TC(0xd3,0x86,0x9b),
-                        TC(0xfa,0xbd,0x2f) },
-    { NULL,              0,   0,   0,   0,   0,   0,   0 }
+                        TC(0xfa,0xbd,0x2f), TC(0x3c,0x38,0x36) },
+    { NULL,              0,   0,   0,   0,   0,   0,   0,   0 }
 };
 
 #undef TC
 
 static void apply_theme_colors(const struct theme_def *t) {
-    config.color_bg       = t->bg;
-    config.color_comment  = t->comment;
-    config.color_keyword1 = t->keyword1;
-    config.color_keyword2 = t->keyword2;
-    config.color_string   = t->string;
-    config.color_number   = t->number;
-    config.color_match    = t->match;
+    config.color_bg        = t->bg;
+    config.color_comment   = t->comment;
+    config.color_keyword1  = t->keyword1;
+    config.color_keyword2  = t->keyword2;
+    config.color_string    = t->string;
+    config.color_number    = t->number;
+    config.color_match     = t->match;
+    config.color_selection = t->selection;
 }
 
 static void apply_color_kv(const char *key, const char *val,
@@ -146,8 +147,9 @@ static void apply_color_kv(const char *key, const char *val,
     else if (!strcmp(key, "color_keyword1")) config.color_keyword1 = c;
     else if (!strcmp(key, "color_keyword2")) config.color_keyword2 = c;
     else if (!strcmp(key, "color_string"))   config.color_string   = c;
-    else if (!strcmp(key, "color_number"))   config.color_number   = c;
-    else if (!strcmp(key, "color_match"))    config.color_match    = c;
+    else if (!strcmp(key, "color_number"))    config.color_number    = c;
+    else if (!strcmp(key, "color_match"))     config.color_match     = c;
+    else if (!strcmp(key, "color_selection")) config.color_selection = c;
 }
 
 static void strip_comment(char *line) {
@@ -220,9 +222,10 @@ static int apply_theme(const char *name, const char *home,
 }
 
 static void config_defaults(void) {
-    config.tab_size    = 4;
-    config.expand_tabs = 0;
-    config.theme[0]    = '\0';
+    config.tab_size      = 4;
+    config.expand_tabs   = 0;
+    config.line_numbers  = 1;
+    config.theme[0]      = '\0';
     apply_theme_colors(&builtin_themes[0]);
 }
 
@@ -248,6 +251,15 @@ static void parse_rc_line(char *line, const char *file, int lineno) {
             config_set_error(file, lineno, msg);
         } else {
             config.expand_tabs = b;
+        }
+    } else if (!strcmp(key, "line_numbers")) {
+        int b = parse_bool(val);
+        if (b < 0) {
+            char msg[128];
+            snprintf(msg, sizeof(msg), "line_numbers must be true or false, got '%s'", val);
+            config_set_error(file, lineno, msg);
+        } else {
+            config.line_numbers = b;
         }
     } else if (!strcmp(key, "theme")) {
         /* handled in first pass */

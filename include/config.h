@@ -21,6 +21,7 @@ int eko_color_bg(int color, char *buf, int bufsz);
 struct eko_config {
     int  tab_size;
     int  expand_tabs;
+    int  line_numbers;
     char theme[64];
     int  color_comment;
     int  color_keyword1;
@@ -29,6 +30,7 @@ struct eko_config {
     int  color_number;
     int  color_match;
     int  color_bg;
+    int  color_selection;
 };
 
 extern struct eko_config config;
