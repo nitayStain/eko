@@ -7,7 +7,7 @@ var default_termios: posix.termios = undefined;
 
 pub fn write(msg: []const u8) !void {
     const stdout = std.fs.File.stdout();
-    _ = try stdout.write(msg);
+    try stdout.writeAll(msg);
 }
 
 pub fn clearScreen() !void {
@@ -66,7 +66,6 @@ pub fn getCursorPosition() !Size {
     if (buf[0] != '\x1b' or buf[1] != '[') return error.InvalidPosition;
     const payload = buf[2..i];
 
-    // using this cool split iterator ^^
     var it = std.mem.splitScalar(u8, payload, ';');
     const rows = try std.fmt.parseInt(u16, it.next() orelse return error.InvalidPosition, 10);
     const cols = try std.fmt.parseInt(u16, it.next() orelse return error.InvalidPosition, 10);

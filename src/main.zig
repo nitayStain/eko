@@ -1,12 +1,31 @@
-const terminal = @import("terminal.zig");
 const std = @import("std");
+const terminal = @import("terminal.zig");
+const Editor = @import("editor/Editor.zig");
 
 pub fn main() !void {
     try terminal.enableRawMode();
-    try terminal.clearScreen();
+    defer terminal.disableRawMode();
 
-    const size = try terminal.getWindowSize();
-    std.debug.print("{d}x{d}\n", .{ size.cols, size.rows });
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
 
-    terminal.disableRawMode();
+    var ed = try Editor.init(allocator);
+    defer ed.deinit();
+
+    const args = try std.process.argsAlloc(allocator);
+    defer std.process.argsFree(allocator, args);
+
+    if (args.len >= 2) {
+        try ed.open(args[1]);
+    }
+
+    ed.setStatusMessage("^S=save ^F=find ^R=replace ^G=goto ^Q=quit", .{});
+
+    while (true) {
+        try ed.refreshScreen();
+        if (!try ed.processKeypress()) break;
+    }
+
+    try terminal.write("\x1b[2J\x1b[H");
 }
