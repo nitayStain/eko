@@ -1,10 +1,6 @@
-# Build output
-eko
-kilo
-
-# Object files
-*.o
-*.d
+# Zig
+.zig-cache/
+zig-out/
 
 # macOS
 .DS_Store
