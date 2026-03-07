@@ -34,5 +34,6 @@ struct eko_config {
 extern struct eko_config config;
 
 void config_load(void);
+const char *config_error(void);
 
 #endif

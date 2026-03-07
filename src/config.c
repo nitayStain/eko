@@ -1,27 +1,3 @@
-/*
- * Configuration loader for ~/.ekorc
- *
- * Supported keys:
- *   tab_size    = 4
- *   expand_tabs = true
- *   theme       = monokai
- *   color_comment  = #75715e   (or 242)
- *   color_keyword1 = #f92672   (or 197)
- *   color_keyword2 = #66d9ef   (or 81)
- *   color_string   = #e6db74   (or 221)
- *   color_number   = #ae81ff   (or 141)
- *   color_match    = #e6db74   (or 226)
- *   color_bg       = #272822   (or 235, or -1 for default)
- *
- * Color values accept 256-color indices (0-255), -1 for terminal
- * default, or #RRGGBB hex for 24-bit true color.
- *
- * Built-in themes: default, monokai, dracula, nord, gruvbox,
- *                  solarized-dark, one-dark, retrobox
- *
- * Custom themes: ~/.eko/themes/NAME.theme (same key=value format)
- */
-
 #include "eko.h"
 
 #include <stdio.h>
@@ -32,7 +8,18 @@
 
 struct eko_config config;
 
-/* ── Color escape helpers ────────────────────────────────────── */
+static char config_err[256];
+static int  config_err_set;
+
+static void config_set_error(const char *file, int lineno, const char *msg) {
+    if (config_err_set) return;
+    snprintf(config_err, sizeof(config_err), "%s:%d: %s", file, lineno, msg);
+    config_err_set = 1;
+}
+
+const char *config_error(void) {
+    return config_err_set ? config_err : NULL;
+}
 
 int eko_color_fg(int color, char *buf, int bufsz) {
     if (EKO_COLOR_IS_NONE(color))
@@ -52,8 +39,6 @@ int eko_color_bg(int color, char *buf, int bufsz) {
     return snprintf(buf, bufsz, "\x1b[48;5;%dm", color);
 }
 
-/* ── Parsing helpers ─────────────────────────────────────────── */
-
 static void rtrim(char *s) {
     int len = (int)strlen(s);
     while (len > 0 && isspace((unsigned char)s[len - 1])) s[--len] = '\0';
@@ -65,8 +50,25 @@ static char *ltrim(char *s) {
 }
 
 static int parse_bool(const char *v) {
-    return !strcmp(v, "1") || !strcmp(v, "true") ||
-           !strcmp(v, "yes")  || !strcmp(v, "on");
+    if (!strcmp(v, "true"))  return 1;
+    if (!strcmp(v, "false")) return 0;
+    return -1;
+}
+
+static int is_valid_color(const char *val) {
+    if (val[0] == '#') {
+        if (strlen(val) != 7) return 0;
+        for (int i = 1; i <= 6; i++)
+            if (!isxdigit((unsigned char)val[i])) return 0;
+        return 1;
+    }
+    if (val[0] == '-' && val[1] == '1' && val[2] == '\0') return 1;
+    if (val[0] == '\0') return 0;
+    for (const char *p = val; *p; p++) {
+        if (!isdigit((unsigned char)*p)) return 0;
+    }
+    int n = atoi(val);
+    return n >= 0 && n <= 255;
 }
 
 static int parse_color(const char *val) {
@@ -78,17 +80,16 @@ static int parse_color(const char *val) {
     return atoi(val);
 }
 
-/* ── Built-in themes (true color) ────────────────────────────── */
+static int is_color_key(const char *key) {
+    return !strcmp(key, "color_bg")       || !strcmp(key, "color_comment")  ||
+           !strcmp(key, "color_keyword1") || !strcmp(key, "color_keyword2") ||
+           !strcmp(key, "color_string")   || !strcmp(key, "color_number")   ||
+           !strcmp(key, "color_match");
+}
 
 struct theme_def {
     const char *name;
-    int bg;
-    int comment;
-    int keyword1;
-    int keyword2;
-    int string;
-    int number;
-    int match;
+    int bg, comment, keyword1, keyword2, string, number, match;
 };
 
 #define TC(r,g,b) EKO_COLOR_RGB(r,g,b)
@@ -131,39 +132,37 @@ static void apply_theme_colors(const struct theme_def *t) {
     config.color_match    = t->match;
 }
 
-static void apply_color_kv(const char *key, const char *val) {
-    if      (!strcmp(key, "color_bg"))       config.color_bg       = parse_color(val);
-    else if (!strcmp(key, "color_comment"))  config.color_comment  = parse_color(val);
-    else if (!strcmp(key, "color_keyword1")) config.color_keyword1 = parse_color(val);
-    else if (!strcmp(key, "color_keyword2")) config.color_keyword2 = parse_color(val);
-    else if (!strcmp(key, "color_string"))   config.color_string   = parse_color(val);
-    else if (!strcmp(key, "color_number"))   config.color_number   = parse_color(val);
-    else if (!strcmp(key, "color_match"))    config.color_match    = parse_color(val);
+static void apply_color_kv(const char *key, const char *val,
+                            const char *file, int lineno) {
+    if (!is_valid_color(val)) {
+        char msg[128];
+        snprintf(msg, sizeof(msg), "invalid color '%s' for %s", val, key);
+        config_set_error(file, lineno, msg);
+        return;
+    }
+    int c = parse_color(val);
+    if      (!strcmp(key, "color_bg"))       config.color_bg       = c;
+    else if (!strcmp(key, "color_comment"))  config.color_comment  = c;
+    else if (!strcmp(key, "color_keyword1")) config.color_keyword1 = c;
+    else if (!strcmp(key, "color_keyword2")) config.color_keyword2 = c;
+    else if (!strcmp(key, "color_string"))   config.color_string   = c;
+    else if (!strcmp(key, "color_number"))   config.color_number   = c;
+    else if (!strcmp(key, "color_match"))    config.color_match    = c;
 }
 
-/*
- * Strip comments from a config line, preserving #RRGGBB hex values.
- * A '#' is a comment if it appears before '=' or after the value with
- * preceding whitespace.
- */
 static void strip_comment(char *line) {
     char *eq = strchr(line, '=');
     if (!eq) {
-        /* No '=', any '#' is a comment */
         char *h = strchr(line, '#');
         if (h) *h = '\0';
         return;
     }
-    /* Strip comments before the key */
     for (char *p = line; p < eq; p++) {
         if (*p == '#') { *p = '\0'; return; }
     }
-    /* After '=', skip the value — a '#' preceded by whitespace is a comment */
     char *val = ltrim(eq + 1);
-    /* If value starts with '#', it's a hex color; skip past it */
     char *scan = val;
     if (*scan == '#') scan++;
-    /* Find next '#' — that's a trailing comment */
     char *h = strchr(scan, '#');
     if (h) *h = '\0';
 }
@@ -188,23 +187,36 @@ static int load_theme_file(const char *name, const char *home) {
     FILE *fp = fopen(path, "r");
     if (!fp) return 0;
     char line[256];
+    int lineno = 0;
     while (fgets(line, sizeof(line), fp)) {
+        lineno++;
         char *key, *val;
         parse_kv_line(line, &key, &val);
-        if (key && val) apply_color_kv(key, val);
+        if (key && val) {
+            if (is_color_key(key)) {
+                apply_color_kv(key, val, path, lineno);
+            } else {
+                config_set_error(path, lineno, "unknown key");
+            }
+        }
     }
     fclose(fp);
     return 1;
 }
 
-static void apply_theme(const char *name, const char *home) {
-    if (home && load_theme_file(name, home)) return;
+static int apply_theme(const char *name, const char *home,
+                        const char *file, int lineno) {
+    if (home && load_theme_file(name, home)) return 1;
     for (int i = 0; builtin_themes[i].name; i++) {
         if (!strcmp(builtin_themes[i].name, name)) {
             apply_theme_colors(&builtin_themes[i]);
-            return;
+            return 1;
         }
     }
+    char msg[128];
+    snprintf(msg, sizeof(msg), "unknown theme '%s'", name);
+    config_set_error(file, lineno, msg);
+    return 0;
 }
 
 static void config_defaults(void) {
@@ -214,18 +226,44 @@ static void config_defaults(void) {
     apply_theme_colors(&builtin_themes[0]);
 }
 
-static void parse_rc_line(char *line) {
+static void parse_rc_line(char *line, const char *file, int lineno) {
     char *key, *val;
     parse_kv_line(line, &key, &val);
     if (!key || !val) return;
 
-    if      (!strcmp(key, "tab_size"))    config.tab_size    = atoi(val);
-    else if (!strcmp(key, "expand_tabs")) config.expand_tabs = parse_bool(val);
-    else apply_color_kv(key, val);
+    if (!strcmp(key, "tab_size")) {
+        int n = atoi(val);
+        if (n < 1 || n > 16) {
+            char msg[128];
+            snprintf(msg, sizeof(msg), "tab_size must be 1-16, got '%s'", val);
+            config_set_error(file, lineno, msg);
+        } else {
+            config.tab_size = n;
+        }
+    } else if (!strcmp(key, "expand_tabs")) {
+        int b = parse_bool(val);
+        if (b < 0) {
+            char msg[128];
+            snprintf(msg, sizeof(msg), "expand_tabs must be true or false, got '%s'", val);
+            config_set_error(file, lineno, msg);
+        } else {
+            config.expand_tabs = b;
+        }
+    } else if (!strcmp(key, "theme")) {
+        /* handled in first pass */
+    } else if (is_color_key(key)) {
+        apply_color_kv(key, val, file, lineno);
+    } else {
+        char msg[128];
+        snprintf(msg, sizeof(msg), "unknown key '%s'", key);
+        config_set_error(file, lineno, msg);
+    }
 }
 
 void config_load(void) {
     config_defaults();
+    config_err[0] = '\0';
+    config_err_set = 0;
 
     const char *home = getenv("HOME");
     if (!home) return;
@@ -235,9 +273,12 @@ void config_load(void) {
     FILE *fp = fopen(path, "r");
     if (!fp) return;
 
-    /* First pass: find theme key */
     char line[256];
+    int lineno = 0;
+    int theme_lineno = 0;
+
     while (fgets(line, sizeof(line), fp)) {
+        lineno++;
         char tmp[256];
         strncpy(tmp, line, sizeof(tmp) - 1);
         tmp[sizeof(tmp) - 1] = '\0';
@@ -245,17 +286,20 @@ void config_load(void) {
         parse_kv_line(tmp, &key, &val);
         if (key && val && !strcmp(key, "theme")) {
             strncpy(config.theme, val, sizeof(config.theme) - 1);
+            theme_lineno = lineno;
             break;
         }
     }
 
     if (config.theme[0])
-        apply_theme(config.theme, home);
+        apply_theme(config.theme, home, path, theme_lineno);
 
-    /* Second pass: apply all settings (color overrides win over theme) */
     rewind(fp);
-    while (fgets(line, sizeof(line), fp))
-        parse_rc_line(line);
+    lineno = 0;
+    while (fgets(line, sizeof(line), fp)) {
+        lineno++;
+        parse_rc_line(line, path, lineno);
+    }
 
     fclose(fp);
 }

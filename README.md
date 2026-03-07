@@ -135,7 +135,7 @@ theme       = monokai
 | `color_number` | color | `1` | Number literal color |
 | `color_match` | color | `4` | Search match highlight color |
 
-Boolean values accept: `true`, `yes`, `on`, `1` (anything else is false).
+Boolean values accept `true` or `false`.
 
 Color values accept three formats:
 - **`#RRGGBB`** — 24-bit true color (e.g. `#f92672`). Works on all modern terminals.

@@ -12,7 +12,11 @@ int main(int argc, char **argv) {
     if (file_name)
         editor_open();
 
-    editor_set_status_message("^S=save ^F=find ^R=replace ^O=open ^Q=quit");
+    const char *cfg_err = config_error();
+    if (cfg_err)
+        editor_set_status_message("Config error: %s", cfg_err);
+    else
+        editor_set_status_message("^S=save ^F=find ^R=replace ^O=open ^Q=quit");
 
     while (1) {
         editor_refresh_screen();

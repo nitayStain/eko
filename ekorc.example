@@ -8,7 +8,6 @@
 tab_size    = 4
 
 # Insert spaces instead of tab characters (default: false)
-# Accepts: true, yes, on, 1
 expand_tabs = false
 
 # ── Color theme ───────────────────────────────────────────────
