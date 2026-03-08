@@ -5,6 +5,7 @@ pub fn insertChar(self: *Editor, c: u8) !void {
     if (self.cy >= self.rows.items.len) return;
 
     const off = self.rows.items[self.cy].off + self.cx;
+    self.recordInsert(off, &[_]u8{c});
     try self.text.insert(off, &[_]u8{c});
 
     self.rows.items[self.cy].size += 1;
@@ -19,6 +20,8 @@ pub fn insertNewline(self: *Editor) !void {
     const old_size = self.rows.items[self.cy].size;
     const split_off = self.rows.items[self.cy].off + self.cx;
 
+    self.breakSeq();
+    self.recordInsert(split_off, "\n");
     try self.text.insert(split_off, "\n");
 
     self.rows.items[self.cy].size = self.cx;
@@ -39,6 +42,9 @@ pub fn deleteChar(self: *Editor) !void {
 
     if (self.cx > 0) {
         const off = self.rows.items[self.cy].off + self.cx - 1;
+        var del: [1]u8 = undefined;
+        self.text.copyRange(off, &del);
+        self.recordDelete(off, &del);
         try self.text.delete(off, 1);
         self.rows.items[self.cy].size -= 1;
         shiftOffsetsFrom(self, self.cy + 1, -1);
@@ -48,6 +54,8 @@ pub fn deleteChar(self: *Editor) !void {
         const prev_size = self.rows.items[self.cy - 1].size;
         const nl_off = self.rows.items[self.cy - 1].off + prev_size;
 
+        self.breakSeq();
+        self.recordDelete(nl_off, "\n");
         try self.text.delete(nl_off, 1);
 
         self.rows.items[self.cy - 1].size += self.rows.items[self.cy].size;
@@ -67,12 +75,17 @@ pub fn deleteForward(self: *Editor) !void {
 
     if (self.cx < self.rows.items[self.cy].size) {
         const off = self.rows.items[self.cy].off + self.cx;
+        var del: [1]u8 = undefined;
+        self.text.copyRange(off, &del);
+        self.recordDelete(off, &del);
         try self.text.delete(off, 1);
         self.rows.items[self.cy].size -= 1;
         shiftOffsetsFrom(self, self.cy + 1, -1);
         self.dirty += 1;
     } else if (self.cy + 1 < self.rows.items.len) {
         const nl_off = self.rows.items[self.cy].off + self.rows.items[self.cy].size;
+        self.breakSeq();
+        self.recordDelete(nl_off, "\n");
         try self.text.delete(nl_off, 1);
 
         self.rows.items[self.cy].size += self.rows.items[self.cy + 1].size;

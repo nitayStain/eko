@@ -18,6 +18,7 @@ const input = @import("input.zig");
 const render = @import("render.zig");
 const search = @import("search.zig");
 const selection_mod = @import("selection.zig");
+const command_log = @import("command_log.zig");
 
 // Cursor
 pub const scroll = cursor.scroll;
@@ -50,6 +51,13 @@ pub const refreshScreen = render.refreshScreen;
 pub const find = search.find;
 pub const findReplace = search.findReplace;
 pub const gotoLine = search.gotoLine;
+
+// Command log (undo/redo)
+pub const recordInsert = command_log.recordInsert;
+pub const recordDelete = command_log.recordDelete;
+pub const breakSeq = command_log.breakSeq;
+pub const undo = command_log.undo;
+pub const redo = command_log.redo;
 
 // Selection
 pub const selectStart = selection_mod.selectStart;
@@ -126,6 +134,11 @@ clipboard: ?[]u8 = null,
 copy_flash_start: ?i64 = null,
 copy_flash_off: ?struct { start: usize, end: usize } = null,
 
+undo_stack: std.ArrayList(command_log.Entry) = .empty,
+redo_stack: std.ArrayList(command_log.Entry) = .empty,
+cmd_seq: u64 = 0,
+cmd_last_seq: u64 = 0,
+
 quit_times: u8 = 2,
 
 config: Config = .{},
@@ -158,6 +171,7 @@ pub fn deinit(self: *Editor) void {
     if (self.base_buf) |buf| self.allocator.free(buf);
     if (self.filename) |name| self.allocator.free(name);
     if (self.clipboard) |clip| self.allocator.free(clip);
+    command_log.deinitStacks(self);
     self.rows.deinit(self.allocator);
     self.render_buf.deinit(self.allocator);
 }

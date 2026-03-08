@@ -232,6 +232,10 @@ pub fn processKeypress(self: *Editor) !bool {
                 try self.cut();
             } else if (c == ctrlKey('v')) {
                 try self.paste();
+            } else if (c == ctrlKey('z')) {
+                try self.undo();
+            } else if (c == ctrlKey('y')) {
+                try self.redo();
             } else if (c == '\r') {
                 if (self.selection != null) {
                     try self.deleteSelection();
