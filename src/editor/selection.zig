@@ -39,6 +39,13 @@ pub fn deleteSelection(self: *Editor) !void {
         return;
     }
 
+    self.breakSeq();
+    const saved = self.allocator.alloc(u8, len) catch null;
+    if (saved) |buf| {
+        self.text.copyRange(offsets.start, buf);
+        self.recordDelete(offsets.start, buf);
+        self.allocator.free(buf);
+    }
     try self.text.delete(offsets.start, len);
     try self.rebuildRows();
     self.setCursorFromOffset(offsets.start);
@@ -74,6 +81,8 @@ pub fn cut(self: *Editor) !void {
 
     pbcopyWrite(self.clipboard.?);
 
+    self.breakSeq();
+    self.recordDelete(offsets.start, self.clipboard.?);
     try self.text.delete(offsets.start, len);
     try self.rebuildRows();
     self.setCursorFromOffset(offsets.start);
@@ -98,6 +107,8 @@ pub fn paste(self: *Editor) !void {
     if (self.cy >= self.rows.items.len) return;
 
     const off = self.cursorOffset();
+    self.breakSeq();
+    self.recordInsert(off, clip);
     try self.text.insert(off, clip);
     try self.rebuildRows();
     self.setCursorFromOffset(off + clip.len);

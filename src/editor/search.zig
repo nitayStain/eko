@@ -183,8 +183,11 @@ pub fn findReplace(self: *Editor) !void {
                     const r = last_row.?;
                     const col = last_col.?;
                     const off = self.rows.items[r].off + col;
+                    self.breakSeq();
+                    self.recordDelete(off, q);
                     try self.text.delete(off, q.len);
                     if (repl.len > 0) {
+                        self.recordInsert(off, repl);
                         try self.text.insert(off, repl);
                     }
                     try self.rebuildRows();
