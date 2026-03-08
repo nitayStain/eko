@@ -34,6 +34,66 @@ pub fn open(self: *Editor, path: []const u8) !void {
     self.col_offset = 0;
 }
 
+pub fn switchFile(self: *Editor) !void {
+    if (self.dirty > 0) {
+        self.setStatusMessage("Unsaved changes! Save first? (y/n)", .{});
+        try self.refreshScreen();
+
+        const key = @import("input.zig").readKey() catch return;
+        switch (key) {
+            .char => |c| {
+                if (c == 'y' or c == 'Y') {
+                    try self.save();
+                } else if (c == '\x1b') {
+                    self.setStatusMessage("Switch cancelled.", .{});
+                    return;
+                }
+                // 'n' or anything else: proceed without saving
+            },
+            else => {
+                self.setStatusMessage("Switch cancelled.", .{});
+                return;
+            },
+        }
+    }
+
+    const result = self.prompt("Open file: {s} (ESC to cancel)", .{}) catch return;
+    if (result == null) {
+        self.setStatusMessage("Switch cancelled.", .{});
+        return;
+    }
+    const name = result.?;
+    if (name.len == 0) {
+        self.allocator.free(name);
+        self.setStatusMessage("Switch cancelled.", .{});
+        return;
+    }
+    defer self.allocator.free(name);
+
+    // Reset text state
+    self.text.deinit();
+    if (self.base_buf) |old| self.allocator.free(old);
+    self.base_buf = null;
+    self.text = PieceTable.init(self.allocator, "") catch {
+        self.setStatusMessage("Out of memory.", .{});
+        return;
+    };
+    self.rows.clearRetainingCapacity();
+    self.rows.append(self.allocator, Editor.RowMeta{ .off = 0, .size = 0 }) catch {};
+    self.selection = null;
+    self.dirty = 0;
+    self.cx = 0;
+    self.cy = 0;
+    self.row_offset = 0;
+    self.col_offset = 0;
+
+    self.open(name) catch {
+        self.setStatusMessage("Can't open file.", .{});
+        return;
+    };
+    self.setStatusMessage("Opened {s} - {d} lines", .{ name, self.rows.items.len });
+}
+
 pub fn save(self: *Editor) !void {
     if (self.filename == null) {
         const name = self.prompt("Save as: {s} (ESC to cancel)", .{}) catch return;

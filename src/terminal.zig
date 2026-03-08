@@ -44,9 +44,14 @@ pub fn enableRawMode() !void {
     raw.cc[@intFromEnum(posix.V.TIME)] = 1;
 
     try posix.tcsetattr(posix.STDIN_FILENO, .FLUSH, raw);
+
+    // Enable mouse button-event tracking + SGR extended coordinates
+    try write("\x1b[?1002h\x1b[?1006h");
 }
 
 pub fn disableRawMode() void {
+    // Disable mouse tracking before restoring terminal
+    write("\x1b[?1006l\x1b[?1002l") catch {};
     posix.tcsetattr(posix.STDIN_FILENO, .FLUSH, default_termios) catch {};
 }
 

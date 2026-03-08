@@ -2,6 +2,38 @@ const std = @import("std");
 const terminal = @import("../terminal.zig");
 const Editor = @import("Editor.zig");
 
+fn mouseSetCursor(self: *Editor, ev: Editor.MouseEvent) void {
+    const file_row = ev.row + self.row_offset;
+    if (file_row >= self.rows.items.len) {
+        self.cy = if (self.rows.items.len > 0) self.rows.items.len - 1 else 0;
+    } else {
+        self.cy = file_row;
+    }
+
+    const rx = if (ev.col >= self.line_num_width)
+        ev.col - self.line_num_width + self.col_offset
+    else
+        0;
+
+    const row = self.rows.items[self.cy];
+    var logical: usize = 0;
+    var render_col: usize = 0;
+    var line_buf: [4096]u8 = undefined;
+    const read_len = @min(row.size, line_buf.len);
+    self.text.copyRange(row.off, line_buf[0..read_len]);
+
+    while (logical < read_len) {
+        if (render_col >= rx) break;
+        if (line_buf[logical] == '\t') {
+            render_col += (self.config.tab_size) - (render_col % self.config.tab_size);
+        } else {
+            render_col += 1;
+        }
+        logical += 1;
+    }
+    self.cx = @min(logical, row.size);
+}
+
 fn ctrlKey(c: u8) u8 {
     return c & 0x1f;
 }
@@ -24,6 +56,45 @@ pub fn drainInput() void {
         var discard: [64]u8 = undefined;
         _ = std.posix.read(std.posix.STDIN_FILENO, &discard) catch break;
     }
+}
+
+fn parseSgrMouse() !Editor.Key {
+    var buf: [32]u8 = undefined;
+    var len: usize = 0;
+    while (len < buf.len) {
+        if (!stdinHasData(50)) return Editor.Key{ .char = '\x1b' };
+        const b = (try readByte()) orelse return Editor.Key{ .char = '\x1b' };
+        buf[len] = b;
+        len += 1;
+        if (b == 'M' or b == 'm') break;
+    }
+    if (len == 0) return Editor.Key{ .char = '\x1b' };
+
+    const final = buf[len - 1];
+    const payload = buf[0 .. len - 1];
+
+    var it = std.mem.splitScalar(u8, payload, ';');
+    const button = std.fmt.parseInt(u16, it.next() orelse return Editor.Key{ .char = '\x1b' }, 10) catch return Editor.Key{ .char = '\x1b' };
+    const col_1 = std.fmt.parseInt(usize, it.next() orelse return Editor.Key{ .char = '\x1b' }, 10) catch return Editor.Key{ .char = '\x1b' };
+    const row_1 = std.fmt.parseInt(usize, it.next() orelse return Editor.Key{ .char = '\x1b' }, 10) catch return Editor.Key{ .char = '\x1b' };
+
+    const row = if (row_1 > 0) row_1 - 1 else 0;
+    const col = if (col_1 > 0) col_1 - 1 else 0;
+    const ev = Editor.MouseEvent{ .row = row, .col = col };
+
+    if (button == 64) return Editor.Key.scroll_up;
+    if (button == 65) return Editor.Key.scroll_down;
+
+    const base = button & 0x03;
+    const is_drag = (button & 32) != 0;
+
+    if (base == 0) {
+        if (is_drag) return Editor.Key{ .mouse_drag = ev };
+        if (final == 'm') return Editor.Key{ .mouse_release = ev };
+        return Editor.Key{ .mouse_press = ev };
+    }
+
+    return Editor.Key{ .char = '\x1b' };
 }
 
 fn readByte() !?u8 {
@@ -55,6 +126,9 @@ pub fn readKey() !Editor.Key {
     const s1 = (try readByte()) orelse return Editor.Key{ .char = '\x1b' };
 
     if (s0 == '[') {
+        if (s1 == '<') {
+            return parseSgrMouse() catch Editor.Key{ .char = '\x1b' };
+        }
         if (s1 >= '0' and s1 <= '9') {
             if (!stdinHasData(50)) return Editor.Key{ .char = '\x1b' };
             const s2 = (try readByte()) orelse return Editor.Key{ .char = '\x1b' };
@@ -107,9 +181,26 @@ pub fn readKey() !Editor.Key {
     return Editor.Key{ .char = '\x1b' };
 }
 
-/// Returns false to signal quit.
+fn checkTimers(self: *Editor) void {
+    const now = std.time.milliTimestamp();
+    if (self.copy_flash_start) |t| {
+        if (now - t >= 150) {
+            self.copy_flash_start = null;
+            self.copy_flash_off = null;
+        }
+    }
+}
+
 pub fn processKeypress(self: *Editor) !bool {
-    const key = try readKey();
+    var key: Editor.Key = undefined;
+    while (true) {
+        checkTimers(self);
+        if (stdinHasData(100)) {
+            key = try readKey();
+            break;
+        }
+        try self.refreshScreen();
+    }
 
     switch (key) {
         .char => |c| {
@@ -128,6 +219,9 @@ pub fn processKeypress(self: *Editor) !bool {
             } else if (c == ctrlKey('r')) {
                 self.selectClear();
                 try self.findReplace();
+            } else if (c == ctrlKey('o')) {
+                self.selectClear();
+                try self.switchFile();
             } else if (c == ctrlKey('g')) {
                 self.selectClear();
                 try self.gotoLine();
@@ -221,6 +315,27 @@ pub fn processKeypress(self: *Editor) !bool {
             if (self.cy < self.rows.items.len) {
                 self.cx = self.rows.items[self.cy].size;
             }
+        },
+
+        .mouse_press => |ev| {
+            self.selectClear();
+            mouseSetCursor(self, ev);
+        },
+        .mouse_drag => |ev| {
+            self.selectStart();
+            mouseSetCursor(self, ev);
+        },
+        .mouse_release => {
+            if (self.selection != null) {
+                self.copy();
+                self.selectClear();
+            }
+        },
+        .scroll_up => {
+            for (0..3) |_| self.moveCursor(Editor.Key.arrow_up);
+        },
+        .scroll_down => {
+            for (0..3) |_| self.moveCursor(Editor.Key.arrow_down);
         },
     }
 

@@ -55,6 +55,7 @@ pub const Config = struct {
     tab_size: usize = 4,
     expand_tabs: bool = false,
     line_numbers: bool = true,
+    smart_selection: bool = false, // Enables auto copy for mouse-selected text
 
     color_comment: Color = .{ .index = 6 },
     color_keyword1: Color = .{ .index = 3 },
@@ -64,6 +65,7 @@ pub const Config = struct {
     color_match: Color = .{ .index = 4 },
     color_bg: Color = .none,
     color_selection: Color = .{ .index = 240 },
+    color_copied: Color = .{ .index = 22 },
 
     config_err: ?[]const u8 = null,
 };
@@ -221,8 +223,8 @@ fn applyColorKv(cfg: *Config, key: []const u8, val: []const u8) bool {
 
 fn isColorKey(key: []const u8) bool {
     const color_keys = [_][]const u8{
-        "color_bg",       "color_comment",  "color_keyword1", "color_keyword2",
-        "color_string",   "color_number",   "color_match",    "color_selection",
+        "color_bg",     "color_comment", "color_keyword1", "color_keyword2",
+        "color_string", "color_number",  "color_match",    "color_selection",
     };
     for (&color_keys) |k| {
         if (std.mem.eql(u8, key, k)) return true;
@@ -368,6 +370,12 @@ pub fn load(allocator: std.mem.Allocator) Config {
                 cfg.line_numbers = true;
             } else if (std.mem.eql(u8, kv.val, "false")) {
                 cfg.line_numbers = false;
+            }
+        } else if (std.mem.eql(u8, kv.key, "smart_selection")) {
+            if (std.mem.eql(u8, kv.val, "true")) {
+                cfg.smart_selection = true;
+            } else if (std.mem.eql(u8, kv.val, "false")) {
+                cfg.smart_selection = false;
             }
         } else if (isColorKey(kv.key)) {
             _ = applyColorKv(&cfg, kv.key, kv.val);

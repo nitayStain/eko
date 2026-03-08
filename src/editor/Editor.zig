@@ -37,6 +37,7 @@ pub const rebuildRows = editing.rebuildRows;
 // File I/O
 pub const open = fileio.open;
 pub const save = fileio.save;
+pub const switchFile = fileio.switchFile;
 
 // Input
 pub const processKeypress = input.processKeypress;
@@ -60,6 +61,11 @@ pub const paste = selection_mod.paste;
 
 // --- Types ---
 
+pub const MouseEvent = struct {
+    row: usize,
+    col: usize,
+};
+
 pub const Key = union(enum) {
     char: u8,
     arrow_up,
@@ -75,6 +81,11 @@ pub const Key = union(enum) {
     home,
     end,
     delete,
+    mouse_press: MouseEvent,
+    mouse_drag: MouseEvent,
+    mouse_release: MouseEvent,
+    scroll_up,
+    scroll_down,
 };
 
 pub const RowMeta = struct {
@@ -111,6 +122,9 @@ status_time: i64 = 0,
 
 selection: ?Selection = null,
 clipboard: ?[]u8 = null,
+
+copy_flash_start: ?i64 = null,
+copy_flash_off: ?struct { start: usize, end: usize } = null,
 
 quit_times: u8 = 2,
 

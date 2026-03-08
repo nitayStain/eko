@@ -55,8 +55,10 @@ pub fn copy(self: *Editor) void {
     self.clipboard = self.allocator.alloc(u8, len) catch return;
     self.text.copyRange(offsets.start, self.clipboard.?);
 
-    // Copy to system clipboard via pbcopy
     pbcopyWrite(self.clipboard.?);
+
+    self.copy_flash_off = .{ .start = offsets.start, .end = offsets.end };
+    self.copy_flash_start = std.time.milliTimestamp();
 
     self.setStatusMessage("Copied {d} bytes", .{len});
 }

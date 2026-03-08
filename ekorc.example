@@ -10,6 +10,10 @@ tab_size    = 4
 # Insert spaces instead of tab characters (default: false)
 expand_tabs = false
 
+# ── Selection ─────────────────────────────────────────────────
+# Automatically copy mouse-selected text to clipboard (default: false)
+smart_selection = false
+
 # ── Color theme ───────────────────────────────────────────────
 # Built-in themes: default, monokai, dracula, nord, gruvbox,
 #                  solarized-dark, one-dark, retrobox
@@ -29,3 +33,5 @@ theme       = monokai
 # color_string   = #e6db74
 # color_number   = #ae81ff
 # color_match    = #e6db74
+# color_selection = 240
+# color_copied   = 22

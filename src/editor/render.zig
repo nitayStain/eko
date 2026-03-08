@@ -142,31 +142,42 @@ fn appendVisibleRowWithSyntax(self: *Editor, row_idx: usize, max_cols: usize) !v
         _ = syntax_mod.computeHighlights(syn, rendered, hl, row.hl_open_comment);
     }
 
-    // Compute selection range in rendered coordinates
+    // Compute selection/flash range in rendered coordinates
     var sel_start_rx: ?usize = null;
     var sel_end_rx: ?usize = null;
-    if (self.selection) |sel| {
+    var sel_color = self.config.color_selection;
+
+    // Determine absolute offsets for the highlighted region
+    var s_off: ?usize = null;
+    var e_off: ?usize = null;
+
+    if (self.copy_flash_off) |flash| {
+        // Copy flash takes priority over selection
+        s_off = flash.start;
+        e_off = flash.end;
+        sel_color = self.config.color_copied;
+    } else if (self.selection) |sel| {
         const a_off = if (sel.mark_y < self.rows.items.len)
             self.rows.items[sel.mark_y].off + sel.mark_x
         else
             self.text.getTotalLength();
         const b_off = self.cursorOffset();
-        const s_off = @min(a_off, b_off);
-        const e_off = @max(a_off, b_off);
+        s_off = @min(a_off, b_off);
+        e_off = @max(a_off, b_off);
+    }
 
+    if (s_off != null and e_off != null) {
         const row_off = row.off;
         const row_end = row_off + row.size;
-        if (s_off < row_end and e_off > row_off) {
-            const sc = if (s_off > row_off) s_off - row_off else 0;
-            const ec = if (e_off < row_end) e_off - row_off else row.size;
+        if (s_off.? < row_end and e_off.? > row_off) {
+            const sc = if (s_off.? > row_off) s_off.? - row_off else 0;
+            const ec = if (e_off.? < row_end) e_off.? - row_off else row.size;
             sel_start_rx = self.rowCxToRx(row_idx, sc);
             sel_end_rx = self.rowCxToRx(row_idx, ec);
-            // Adjust for col_offset
             if (sel_start_rx.? < self.col_offset) sel_start_rx = self.col_offset;
         }
     }
 
-    // Output visible portion with colors
     const col_start = self.col_offset;
     const col_end = col_start + max_cols;
     var current_color: Color = .none;
@@ -174,15 +185,13 @@ fn appendVisibleRowWithSyntax(self: *Editor, row_idx: usize, max_cols: usize) !v
 
     var j = col_start;
     while (j < @min(col_end, rendered_len)) : (j += 1) {
-        // Selection start/end
         const want_sel = (sel_start_rx != null and sel_end_rx != null and
             j >= sel_start_rx.? and j < sel_end_rx.?);
 
         if (want_sel and !in_sel) {
-            try self.config.color_selection.writeBg(&self.render_buf, alloc);
+            try sel_color.writeBg(&self.render_buf, alloc);
             in_sel = true;
         } else if (!want_sel and in_sel) {
-            // Restore background
             switch (self.config.color_bg) {
                 .none => try self.render_buf.appendSlice(alloc, "\x1b[49m"),
                 else => try self.config.color_bg.writeBg(&self.render_buf, alloc),
@@ -190,7 +199,6 @@ fn appendVisibleRowWithSyntax(self: *Editor, row_idx: usize, max_cols: usize) !v
             in_sel = false;
         }
 
-        // Syntax color
         const color = syntax_mod.hlToColor(hl[j], &self.config);
         if (!color.eql(current_color)) {
             current_color = color;
@@ -203,7 +211,6 @@ fn appendVisibleRowWithSyntax(self: *Editor, row_idx: usize, max_cols: usize) !v
         try self.render_buf.append(alloc, rendered[j]);
     }
 
-    // Reset colors
     if (in_sel) {
         switch (self.config.color_bg) {
             .none => try self.render_buf.appendSlice(alloc, "\x1b[49m"),
