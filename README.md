@@ -1,23 +1,36 @@
 # EKo — Extended Kilo
 
-A lightweight terminal text editor written in C, extended from [kilo](https://github.com/antirez/kilo).
+A lightweight terminal text editor written in Zig, extended from [kilo](https://github.com/antirez/kilo).
 EKo adds syntax highlighting for 14 languages, configurable themes, find & replace,
 file switching, and a piece-table–based text buffer — all in a single dependency-free binary.
 
-## Building
+## Quick Install
+
+No dependencies required — the script downloads the Zig compiler automatically:
 
 ```
-make
+curl -fsSL https://raw.githubusercontent.com/nitaystain/eko/main/install.sh | sh
 ```
 
-Requires a C99 compiler (GCC, Clang, etc.). No external libraries needed.
-
-## Installation
+Or clone and run locally:
 
 ```
-sudo make install            # installs to /usr/local/bin
-sudo make PREFIX=/usr install  # or pick a different prefix
+git clone https://github.com/nitayStain/eko.git
+cd eko
+./install.sh                       # installs to /usr/local/bin
+PREFIX=/usr ./install.sh           # or pick a different prefix
 ```
+
+## Building from source
+
+If you have [Zig](https://ziglang.org/) (0.15+) installed:
+
+```
+zig build                          # debug build
+zig build -Doptimize=ReleaseFast   # optimized build
+```
+
+The binary is placed in `zig-out/bin/eko`.
 
 ## Usage
 
@@ -34,6 +47,11 @@ eko               # start with an empty buffer
 | `Ctrl-F` | Find (incremental search) |
 | `Ctrl-R` | Find & Replace (all occurrences) |
 | `Ctrl-O` | Open / switch to a different file |
+| `Ctrl-Z` | Undo |
+| `Ctrl-Y` | Redo |
+| `Ctrl-C` | Copy selection |
+| `Ctrl-X` | Cut selection |
+| `Ctrl-V` | Paste |
 | `Ctrl-Q` | Quit (press twice to discard unsaved changes) |
 | `Ctrl-H` / `Backspace` | Delete character before cursor |
 | `Delete` | Delete character under cursor |
