@@ -23,7 +23,7 @@ pub fn main() !void {
     if (ed.config.config_err) |err| {
         ed.setStatusMessage("Config error: {s}", .{err});
     } else {
-        ed.setStatusMessage("^S=save ^F=find ^R=replace ^G=goto ^Q=quit", .{});
+        ed.setStatusMessage("^S=save ^F=find ^R=replace ^G=goto ^Z=undo ^Y=redo ^Q=quit", .{});
     }
 
     while (true) {
