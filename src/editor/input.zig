@@ -326,7 +326,7 @@ pub fn processKeypress(self: *Editor) !bool {
             mouseSetCursor(self, ev);
         },
         .mouse_release => {
-            if (self.selection != null) {
+            if (self.config.smart_selection and self.selection != null) {
                 self.copy();
                 self.selectClear();
             }
