@@ -126,6 +126,7 @@ theme       = monokai
 |---|---|---|---|
 | `tab_size` | integer | `4` | Width of a tab stop in spaces |
 | `expand_tabs` | boolean | `false` | Insert spaces instead of a tab character |
+| `smart_selection` | boolean | `false` | Auto-copy mouse-selected text to clipboard |
 | `theme` | string | `default` | Color theme name (see below) |
 | `color_bg` | color | `-1` | Background color (`-1` = terminal default) |
 | `color_comment` | color | `6` | Comment color |
@@ -134,6 +135,8 @@ theme       = monokai
 | `color_string` | color | `5` | String literal color |
 | `color_number` | color | `1` | Number literal color |
 | `color_match` | color | `4` | Search match highlight color |
+| `color_selection` | color | `240` | Selection highlight color |
+| `color_copied` | color | `22` | Copy flash highlight color |
 
 Boolean values accept `true` or `false`.
 
