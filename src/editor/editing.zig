@@ -12,6 +12,7 @@ pub fn insertChar(self: *Editor, c: u8) !void {
     shiftOffsetsFrom(self, self.cy + 1, 1);
     self.cx += 1;
     self.dirty += 1;
+    self.markDirtyRow(self.cy);
 }
 
 pub fn insertNewline(self: *Editor) !void {
@@ -34,6 +35,7 @@ pub fn insertNewline(self: *Editor) !void {
     self.cy += 1;
     self.cx = 0;
     self.dirty += 1;
+    self.markDirtyFrom(self.cy - 1);
 }
 
 pub fn deleteChar(self: *Editor) !void {
@@ -50,6 +52,7 @@ pub fn deleteChar(self: *Editor) !void {
         shiftOffsetsFrom(self, self.cy + 1, -1);
         self.cx -= 1;
         self.dirty += 1;
+        self.markDirtyRow(self.cy);
     } else {
         const prev_size = self.rows.items[self.cy - 1].size;
         const nl_off = self.rows.items[self.cy - 1].off + prev_size;
@@ -67,6 +70,7 @@ pub fn deleteChar(self: *Editor) !void {
         self.cy -= 1;
         self.cx = prev_size;
         self.dirty += 1;
+        self.markDirtyFrom(self.cy);
     }
 }
 
@@ -82,6 +86,7 @@ pub fn deleteForward(self: *Editor) !void {
         self.rows.items[self.cy].size -= 1;
         shiftOffsetsFrom(self, self.cy + 1, -1);
         self.dirty += 1;
+        self.markDirtyRow(self.cy);
     } else if (self.cy + 1 < self.rows.items.len) {
         const nl_off = self.rows.items[self.cy].off + self.rows.items[self.cy].size;
         self.breakSeq();
@@ -92,6 +97,7 @@ pub fn deleteForward(self: *Editor) !void {
         _ = self.rows.orderedRemove(self.cy + 1);
         shiftOffsetsFrom(self, self.cy + 1, -1);
         self.dirty += 1;
+        self.markDirtyFrom(self.cy);
     }
 }
 
@@ -107,6 +113,7 @@ pub fn shiftOffsetsFrom(self: *Editor, from: usize, delta: isize) void {
 }
 
 pub fn rebuildRows(self: *Editor) !void {
+    self.markDirtyAll();
     self.rows.clearRetainingCapacity();
 
     const total_len = self.text.getTotalLength();
