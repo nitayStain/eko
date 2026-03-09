@@ -25,9 +25,11 @@ pub fn selectStart(self: *Editor) void {
             .mark_y = self.cy,
         };
     }
+    self.markDirtyAll();
 }
 
 pub fn selectClear(self: *Editor) void {
+    if (self.selection != null) self.markDirtyAll();
     self.selection = null;
 }
 

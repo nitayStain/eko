@@ -187,6 +187,7 @@ fn checkTimers(self: *Editor) void {
         if (now - t >= 150) {
             self.copy_flash_start = null;
             self.copy_flash_off = null;
+            self.markDirtyAll();
         }
     }
 }
@@ -199,7 +200,7 @@ pub fn processKeypress(self: *Editor) !bool {
             key = try readKey();
             break;
         }
-        try self.refreshScreen();
+        if (self.needsRedraw()) try self.refreshScreen();
     }
 
     switch (key) {

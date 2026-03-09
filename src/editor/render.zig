@@ -12,7 +12,6 @@ pub fn refreshScreen(self: *Editor) !void {
     const alloc = self.allocator;
 
     try self.render_buf.appendSlice(alloc, "\x1b[?25l");
-    try self.render_buf.appendSlice(alloc, "\x1b[H");
 
     // Set background color if configured
     const has_bg = switch (self.config.color_bg) {
@@ -46,8 +45,19 @@ fn drawRows(self: *Editor) !void {
     const alloc = self.allocator;
     const gutter = self.line_num_width;
     const text_cols = self.textCols();
+    const sd = self.screen_dirty;
 
     for (0..self.screen_rows) |y| {
+        if (!self.dirty_all) {
+            if (sd) |d| {
+                if (y < d.len and !d[y]) continue;
+            }
+        }
+
+        var row_pos_buf: [16]u8 = undefined;
+        const row_pos = std.fmt.bufPrint(&row_pos_buf, "\x1b[{d};1H", .{y + 1}) catch unreachable;
+        try self.render_buf.appendSlice(alloc, row_pos);
+
         const file_row = y + self.row_offset;
         if (file_row < self.rows.items.len) {
             // Line number gutter
@@ -88,8 +98,13 @@ fn drawRows(self: *Editor) !void {
             }
         }
         try self.render_buf.appendSlice(alloc, "\x1b[K");
-        try self.render_buf.appendSlice(alloc, "\r\n");
+
+        if (sd) |d| {
+            if (y < d.len) d[y] = false;
+        }
     }
+
+    self.dirty_all = false;
 }
 
 fn appendVisibleRowWithSyntax(self: *Editor, row_idx: usize, max_cols: usize) !void {
@@ -225,6 +240,10 @@ fn appendVisibleRowWithSyntax(self: *Editor, row_idx: usize, max_cols: usize) !v
 
 fn drawStatusBar(self: *Editor) !void {
     const alloc = self.allocator;
+
+    var sb_pos_buf: [16]u8 = undefined;
+    const sb_pos = std.fmt.bufPrint(&sb_pos_buf, "\x1b[{d};1H", .{self.screen_rows + 1}) catch unreachable;
+    try self.render_buf.appendSlice(alloc, sb_pos);
     try self.render_buf.appendSlice(alloc, "\x1b[7m");
 
     const name: []const u8 = if (self.filename) |f| f else "[No Name]";
@@ -253,6 +272,10 @@ fn drawStatusBar(self: *Editor) !void {
 
 fn drawMessageBar(self: *Editor) !void {
     const alloc = self.allocator;
+
+    var mb_pos_buf: [16]u8 = undefined;
+    const mb_pos = std.fmt.bufPrint(&mb_pos_buf, "\x1b[{d};1H", .{self.screen_rows + 2}) catch unreachable;
+    try self.render_buf.appendSlice(alloc, mb_pos);
     try self.render_buf.appendSlice(alloc, "\x1b[K");
 
     if (self.status_msg_len > 0) {

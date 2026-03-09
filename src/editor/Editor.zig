@@ -139,6 +139,12 @@ redo_stack: std.ArrayList(command_log.Entry) = .empty,
 cmd_seq: u64 = 0,
 cmd_last_seq: u64 = 0,
 
+screen_dirty: ?[]bool = null,
+dirty_all: bool = true,
+
+prev_row_offset: usize = std.math.maxInt(usize),
+prev_col_offset: usize = std.math.maxInt(usize),
+
 quit_times: u8 = 2,
 
 config: Config = .{},
@@ -163,6 +169,8 @@ pub fn init(allocator: std.mem.Allocator) !Editor {
     };
     try ed.rows.append(allocator, RowMeta{ .off = 0, .size = 0 });
     ed.updateLineNumWidth();
+    ed.screen_dirty = allocator.alloc(bool, sr) catch null;
+    if (ed.screen_dirty) |sd| @memset(sd, true);
     return ed;
 }
 
@@ -171,6 +179,7 @@ pub fn deinit(self: *Editor) void {
     if (self.base_buf) |buf| self.allocator.free(buf);
     if (self.filename) |name| self.allocator.free(name);
     if (self.clipboard) |clip| self.allocator.free(clip);
+    if (self.screen_dirty) |sd| self.allocator.free(sd);
     command_log.deinitStacks(self);
     self.rows.deinit(self.allocator);
     self.render_buf.deinit(self.allocator);
@@ -209,6 +218,35 @@ pub fn setStatusMessage(self: *Editor, comptime fmt: []const u8, args: anytype) 
     };
     self.status_msg_len = result.len;
     self.status_time = std.time.timestamp();
+}
+
+pub fn markDirtyAll(self: *Editor) void {
+    self.dirty_all = true;
+}
+
+pub fn markDirtyRow(self: *Editor, file_row: usize) void {
+    const sd = self.screen_dirty orelse return;
+    if (file_row < self.row_offset) return;
+    const screen_y = file_row - self.row_offset;
+    if (screen_y < sd.len) sd[screen_y] = true;
+}
+
+pub fn markDirtyFrom(self: *Editor, file_row: usize) void {
+    const sd = self.screen_dirty orelse {
+        self.dirty_all = true;
+        return;
+    };
+    const start = if (file_row >= self.row_offset) file_row - self.row_offset else 0;
+    if (start < sd.len) @memset(sd[start..], true);
+}
+
+pub fn needsRedraw(self: *const Editor) bool {
+    if (self.dirty_all) return true;
+    const sd = self.screen_dirty orelse return true;
+    for (sd) |d| {
+        if (d) return true;
+    }
+    return false;
 }
 
 pub fn textCols(self: *const Editor) usize {

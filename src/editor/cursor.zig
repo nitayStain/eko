@@ -19,9 +19,16 @@ pub fn scroll(self: *Editor) void {
     if (self.rx >= self.col_offset + text_cols) {
         self.col_offset = self.rx - text_cols + 1;
     }
+
+    if (self.row_offset != self.prev_row_offset or self.col_offset != self.prev_col_offset) {
+        self.dirty_all = true;
+        self.prev_row_offset = self.row_offset;
+        self.prev_col_offset = self.col_offset;
+    }
 }
 
 pub fn moveCursor(self: *Editor, key: Editor.Key) void {
+    const old_cy = self.cy;
     switch (key) {
         .arrow_left => {
             if (self.cx > 0) {
@@ -52,6 +59,11 @@ pub fn moveCursor(self: *Editor, key: Editor.Key) void {
     }
 
     clampCursor(self);
+
+    if (self.cy != old_cy) {
+        self.markDirtyRow(old_cy);
+        self.markDirtyRow(self.cy);
+    }
 }
 
 pub fn clampCursor(self: *Editor) void {
