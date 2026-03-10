@@ -128,6 +128,11 @@ expand_tabs = true
 # Color theme
 theme       = monokai
 
+# Cursor
+# 0=block, 1=underline, 2=beam
+cursor_type  = 0
+cursor_blink = false
+
 # Override individual colors with hex (#RRGGBB) or 256-color index
 # color_comment  = #75715e
 # color_keyword1 = #f92672
@@ -146,6 +151,8 @@ theme       = monokai
 | `expand_tabs` | boolean | `false` | Insert spaces instead of a tab character |
 | `smart_selection` | boolean | `false` | Auto-copy mouse-selected text to clipboard |
 | `theme` | string | `default` | Color theme name (see below) |
+| `cursor_type` | integer | `0` | Cursor shape: `0` block, `1` underline, `2` beam |
+| `cursor_blink` | boolean | `false` | Whether the cursor blinks |
 | `color_bg` | color | `-1` | Background color (`-1` = terminal default) |
 | `color_comment` | color | `6` | Comment color |
 | `color_keyword1` | color | `3` | Keyword color |
@@ -157,6 +164,11 @@ theme       = monokai
 | `color_copied` | color | `22` | Copy flash highlight color |
 
 Boolean values accept `true` or `false`.
+
+Cursor type accepts:
+- **`0`** — block cursor
+- **`1`** — underline cursor
+- **`2`** — beam (vertical bar) cursor
 
 Color values accept three formats:
 - **`#RRGGBB`** — 24-bit true color (e.g. `#f92672`). Works on all modern terminals.

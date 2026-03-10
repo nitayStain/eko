@@ -20,6 +20,14 @@ smart_selection = false
 # Custom themes:   place NAME.theme in ~/.eko/themes/
 theme       = monokai
 
+# ── Cursor ────────────────────────────────────────────────────
+# Cursor shape:
+#   0 = block, 1 = underline, 2 = beam (vertical bar)
+cursor_type = 0
+
+# Make cursor blink (true) or stay steady (false)
+cursor_blink = false
+
 # ── Color overrides ───────────────────────────────────────────
 # These override the theme's colors. Values can be:
 #   - A 256-color ANSI index (0-255)

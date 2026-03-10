@@ -51,11 +51,29 @@ fn tc(r: u8, g: u8, b: u8) Color {
     return .{ .rgb = .{ .r = r, .g = g, .b = b } };
 }
 
+pub const CursorType = enum {
+    block,
+    underline,
+    beam,
+
+    pub fn toEsc(self: CursorType, is_blinking: bool) []const u8 {
+        return switch (self) {
+            .block => if (is_blinking) "\x1b[2 q" else "\x1b[0 q",
+            .underline => if (is_blinking) "\x1b[4 q" else "\x1b[3 q",
+            .beam => if (is_blinking) "\x1b[5 q" else "\x1b[6 q",
+        };
+    }
+};
+
 pub const Config = struct {
     tab_size: usize = 4,
     expand_tabs: bool = false,
     line_numbers: bool = true,
     smart_selection: bool = false, // Enables auto copy for mouse-selected text
+
+    // Cursor settings
+    cursor_type: CursorType = .block,
+    cursor_blink: bool = false,
 
     color_comment: Color = .{ .index = 6 },
     color_keyword1: Color = .{ .index = 3 },
@@ -376,6 +394,17 @@ pub fn load(allocator: std.mem.Allocator) Config {
                 cfg.smart_selection = true;
             } else if (std.mem.eql(u8, kv.val, "false")) {
                 cfg.smart_selection = false;
+            }
+        } else if (std.mem.eql(u8, kv.key, "cursor_type")) {
+            const cursor_type = std.fmt.parseInt(usize, kv.val, 10) catch continue;
+            if (cursor_type <= @intFromEnum(CursorType.beam)) {
+                cfg.cursor_type = @enumFromInt(cursor_type);
+            }
+        } else if (std.mem.eql(u8, kv.key, "cursor_blink")) {
+            if (std.mem.eql(u8, kv.val, "true")) {
+                cfg.cursor_blink = true;
+            } else if (std.mem.eql(u8, kv.val, "false")) {
+                cfg.cursor_blink = false;
             }
         } else if (isColorKey(kv.key)) {
             _ = applyColorKv(&cfg, kv.key, kv.val);

@@ -167,6 +167,9 @@ pub fn init(allocator: std.mem.Allocator) !Editor {
         .screen_cols = @intCast(screen.cols),
         .config = cfg,
     };
+
+    try terminal.write(cfg.cursor_type.toEsc(cfg.cursor_blink));
+
     try ed.rows.append(allocator, RowMeta{ .off = 0, .size = 0 });
     ed.updateLineNumWidth();
     ed.screen_dirty = allocator.alloc(bool, sr) catch null;
@@ -183,6 +186,9 @@ pub fn deinit(self: *Editor) void {
     command_log.deinitStacks(self);
     self.rows.deinit(self.allocator);
     self.render_buf.deinit(self.allocator);
+
+    // Return to default cursor before exiting
+    terminal.write("\x1b[0 q") catch {};
 }
 
 pub fn cursorOffset(self: *const Editor) usize {
